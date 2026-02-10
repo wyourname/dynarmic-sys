@@ -1,6 +1,6 @@
 [package]
 name = "dynarmic-sys"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["wyourname <https://github.com/wyourname/dynarmic-sys>"]
 description = "A Rust wrapper for the Dynarmic ARM dynamic recompiler."

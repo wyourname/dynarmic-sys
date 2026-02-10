@@ -102,15 +102,29 @@ fn build_with_cmake() {
     );
     println!(
         "cargo:rustc-link-search=native={}",
-        dst.join("build").join("dynarmic").join("externals").join("zydis").display()
+        dst.join("build")
+            .join("dynarmic")
+            .join("externals")
+            .join("zydis")
+            .display()
     );
     println!(
         "cargo:rustc-link-search=native={}",
-        dst.join("build").join("dynarmic").join("externals").join("zydis").join("zycore").display()
+        dst.join("build")
+            .join("dynarmic")
+            .join("externals")
+            .join("zydis")
+            .join("zycore")
+            .display()
     );
     println!(
         "cargo:rustc-link-search=native={}",
-        dst.join("build").join("dynarmic").join("externals").join("mcl").join("src").display()
+        dst.join("build")
+            .join("dynarmic")
+            .join("externals")
+            .join("mcl")
+            .join("src")
+            .display()
     );
 
     // Lazymio(@wtdcode): Dynamic link may break. See: https://github.com/rust-lang/cargo/issues/5077

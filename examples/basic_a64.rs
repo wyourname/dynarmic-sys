@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
     emu.mem_write(code_addr, &code)?;
 
     println!("Starting emulation at 0x{:x}...", code_addr);
-    
+
     // Run until the end of the code block
     emu.emu_start(code_addr, code_addr + code.len() as u64)?;
 

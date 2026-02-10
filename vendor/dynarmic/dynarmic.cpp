@@ -266,7 +266,7 @@ typedef struct dynarmic {
 
 extern "C" {
 
-FQL int dynarmic_version() { return 20240814; } 
+FQL int dynarmic_version() { return 20260209; } 
 FQL const char* dynarmic_colorful_egg() { return "🥚"; }
 
 FQL khash_t(memory) *dynarmic_init_memory() {

@@ -1,18 +1,18 @@
 extern crate alloc;
 
+use crate::ffi::{DyHook, SFHook};
+use anyhow::anyhow;
+use log::{debug, error, warn};
 use std::cell::UnsafeCell;
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::process::exit;
-use std::ptr::{null_mut};
-use std::rc::Rc;
-use anyhow::anyhow;
-use log::{error, warn, debug};
-use crate::ffi::{DyHook, SFHook};
+use std::ptr::null_mut;
+use std::sync::Arc;
 
 mod ffi;
 
-pub type DynarmicContext = Rc<DynarmicContextInner>;
+pub type DynarmicContext = Arc<DynarmicContextInner>;
 
 #[derive(Clone)]
 pub struct DynarmicContextInner {
@@ -33,7 +33,10 @@ impl Drop for DynarmicContextInner {
     }
 }
 
-pub type DynarmicContext32 = Rc<DynarmicContext32Inner>;
+unsafe impl Send for DynarmicContextInner {}
+unsafe impl Sync for DynarmicContextInner {}
+
+pub type DynarmicContext32 = Arc<DynarmicContext32Inner>;
 
 #[derive(Clone)]
 pub struct DynarmicContext32Inner {
@@ -53,6 +56,9 @@ impl Drop for DynarmicContext32Inner {
         self.destroy();
     }
 }
+
+unsafe impl Send for DynarmicContext32Inner {}
+unsafe impl Sync for DynarmicContext32Inner {}
 
 /// Returns the version of the underlying Dynarmic engine.
 pub fn dynarmic_version() -> u32 {
@@ -90,18 +96,24 @@ impl Drop for Metadata<'_> {
     }
 }
 
+unsafe impl Send for Metadata<'_> {}
+unsafe impl Sync for Metadata<'_> {}
+
 /// A high-level wrapper around the Dynarmic ARM dynamic recompiler.
 ///
 /// This struct provides a safe(r) interface for memory mapping, register access,
 /// and execution control for both ARM32 and ARM64 architectures.
 #[derive(Clone)]
-pub struct Dynarmic<'a, T: Clone> {
+pub struct Dynarmic<'a, T: Clone + Send + Sync> {
     cur_handle: *mut c_void,
-    metadata: Rc<UnsafeCell<Metadata<'a>>>,
-    pd: PhantomData<&'a T>
+    metadata: Arc<UnsafeCell<Metadata<'a>>>,
+    pd: PhantomData<&'a T>,
 }
 
-impl<'a, T: Clone> Dynarmic<'a, T> {
+unsafe impl<'a, T: Clone + Send + Sync> Send for Dynarmic<'a, T> {}
+unsafe impl<'a, T: Clone + Send + Sync> Sync for Dynarmic<'a, T> {}
+
+impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
     /// Creates a new Dynarmic instance for ARM64 (AArch64) emulation.
     ///
     /// The JIT cache size can be configured via the `DYNARMIC_JIT_SIZE` environment variable (in MB).
@@ -117,7 +129,7 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(64);
-        
+
         if jit_size < 8 {
             warn!("JIT size {}MB is too small, setting to 8MB", jit_size);
             jit_size = 8;
@@ -128,13 +140,18 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
 
         let monitor = unsafe { ffi::dynarmic_init_monitor(1) };
         let page_table = unsafe { ffi::dynarmic_init_page_table() };
-        let handle = unsafe { ffi::dynarmic_new(0, memory, monitor, page_table, jit_size * 1024 * 1024, true) };
+        let handle = unsafe {
+            ffi::dynarmic_new(0, memory, monitor, page_table, jit_size * 1024 * 1024, true)
+        };
 
-        debug!("[Dynarmic] Created new Dynarmic instance: {:X} with {}MB JIT", handle as usize, jit_size);
+        debug!(
+            "[Dynarmic] Created new Dynarmic instance: {:X} with {}MB JIT",
+            handle as usize, jit_size
+        );
 
         Dynarmic {
             cur_handle: handle,
-            metadata: Rc::new(UnsafeCell::new(Metadata {
+            metadata: Arc::new(UnsafeCell::new(Metadata {
                 svc_callback: None,
                 unmapped_mem_callback: None,
                 until: 0,
@@ -173,13 +190,26 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
 
         let monitor = unsafe { ffi::dynarmic_init_monitor(1) };
         let page_table = unsafe { ffi::dynarmic_init_page_table() };
-        let handle = unsafe { ffi::dynarmic_new_a32(0, memory, monitor, page_table, jit_size * 1024 * 1024, true, null_mut()) };
+        let handle = unsafe {
+            ffi::dynarmic_new_a32(
+                0,
+                memory,
+                monitor,
+                page_table,
+                jit_size * 1024 * 1024,
+                true,
+                null_mut(),
+            )
+        };
 
-        debug!("[Dynarmic] Created new Dynarmic A32 instance: {:X} with {}MB JIT", handle as usize, jit_size);
+        debug!(
+            "[Dynarmic] Created new Dynarmic A32 instance: {:X} with {}MB JIT",
+            handle as usize, jit_size
+        );
 
         Dynarmic {
             cur_handle: handle,
-            metadata: Rc::new(UnsafeCell::new(Metadata {
+            metadata: Arc::new(UnsafeCell::new(Metadata {
                 svc_callback: None,
                 unmapped_mem_callback: None,
                 until: 0,
@@ -224,18 +254,14 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
 
     /// Returns the current size of the JIT code cache.
     pub fn get_cache_size(&self) -> u64 {
-        unsafe {
-            ffi::dynarmic_get_cache_size(self.cur_handle)
-        }
+        unsafe { ffi::dynarmic_get_cache_size(self.cur_handle) }
     }
 
     /// Allocates a new ARM64 context.
     pub fn context_alloc(&self) -> DynarmicContext {
         unsafe {
             let inner_context = ffi::dynarmic_context_alloc();
-            Rc::new(DynarmicContextInner {
-                inner_context,
-            })
+            Arc::new(DynarmicContextInner { inner_context })
         }
     }
 
@@ -265,9 +291,7 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     pub fn context32_alloc(&self) -> DynarmicContext32 {
         unsafe {
             let inner_context = ffi::dynarmic_context32_alloc();
-            Rc::new(DynarmicContext32Inner {
-                inner_context,
-            })
+            Arc::new(DynarmicContext32Inner { inner_context })
         }
     }
 
@@ -300,31 +324,56 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// * `prot`: Protection flags (1: Read, 2: Write, 4: Execute).
     pub fn mem_map(&self, addr: u64, size: usize, prot: u32) -> anyhow::Result<()> {
         unsafe {
-            debug!("[Dynarmic] Mapping memory: addr=0x{:x}, size=0x{:x}, prot={}", addr, size, prot);
-            let ret = ffi::dynarmic_mmap(self.cur_handle, addr, size as u64, u32::cast_signed(prot));
+            debug!(
+                "[Dynarmic] Mapping memory: addr=0x{:x}, size=0x{:x}, prot={}",
+                addr, size, prot
+            );
+            let ret =
+                ffi::dynarmic_mmap(self.cur_handle, addr, size as u64, u32::cast_signed(prot));
             if ret == 4 {
                 warn!("Replace mmap?");
             }
             if ret != 0 {
                 return Err(anyhow!("Failed to map memory: code={}", ret));
             }
-            debug!("[Dynarmic] Mapped memory: addr=0x{:x}, size=0x{:x}, prot={}", addr, size, prot);
+            debug!(
+                "[Dynarmic] Mapped memory: addr=0x{:x}, size=0x{:x}, prot={}",
+                addr, size, prot
+            );
             Ok(())
         }
     }
 
     /// Maps a region of memory using a host pointer.
-    pub fn mem_map_ptr(&self, addr: u64, size: usize, prot: u32, ptr: *mut c_void) -> anyhow::Result<()> {
+    pub fn mem_map_ptr(
+        &self,
+        addr: u64,
+        size: usize,
+        prot: u32,
+        ptr: *mut c_void,
+    ) -> anyhow::Result<()> {
         unsafe {
-            debug!("[Dynarmic] Mapping memory ptr: addr=0x{:x}, size=0x{:x}, prot={}, ptr={:?}", addr, size, prot, ptr);
-            let ret = ffi::dynarmic_mem_map_ptr(self.cur_handle, addr, size as u64, u32::cast_signed(prot), ptr);
+            debug!(
+                "[Dynarmic] Mapping memory ptr: addr=0x{:x}, size=0x{:x}, prot={}, ptr={:?}",
+                addr, size, prot, ptr
+            );
+            let ret = ffi::dynarmic_mem_map_ptr(
+                self.cur_handle,
+                addr,
+                size as u64,
+                u32::cast_signed(prot),
+                ptr,
+            );
             if ret == 4 {
                 warn!("Replace mmap?");
             }
             if ret != 0 {
                 return Err(anyhow!("Failed to map memory ptr: code={}", ret));
             }
-            debug!("[Dynarmic] Mapped memory ptr: addr=0x{:x}, size=0x{:x}, prot={}", addr, size, prot);
+            debug!(
+                "[Dynarmic] Mapped memory ptr: addr=0x{:x}, size=0x{:x}, prot={}",
+                addr, size, prot
+            );
             Ok(())
         }
     }
@@ -332,7 +381,10 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// Unmaps a region of memory.
     pub fn mem_unmap(&self, addr: u64, size: usize) -> anyhow::Result<()> {
         unsafe {
-            debug!("[Dynarmic] Unmapping memory: addr=0x{:x}, size=0x{:x}", addr, size);
+            debug!(
+                "[Dynarmic] Unmapping memory: addr=0x{:x}, size=0x{:x}",
+                addr, size
+            );
             let ret = ffi::dynarmic_munmap(self.cur_handle, addr, size as u64);
             if ret != 0 {
                 return Err(anyhow!("Failed to unmap memory: code={}", ret));
@@ -344,8 +396,16 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// Updates protection flags for a memory region.
     pub fn mem_protect(&self, addr: u64, size: usize, prot: u32) -> anyhow::Result<()> {
         unsafe {
-            debug!("[Dynarmic] Protecting memory: addr=0x{:x}, size=0x{:x}, prot={}", addr, size, prot);
-            let ret = ffi::dynarmic_mem_protect(self.cur_handle, addr, size as u64, u32::cast_signed(prot));
+            debug!(
+                "[Dynarmic] Protecting memory: addr=0x{:x}, size=0x{:x}, prot={}",
+                addr, size, prot
+            );
+            let ret = ffi::dynarmic_mem_protect(
+                self.cur_handle,
+                addr,
+                size as u64,
+                u32::cast_signed(prot),
+            );
             if ret != 0 {
                 return Err(anyhow!("Failed to protect memory: code={}", ret));
             }
@@ -355,44 +415,32 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
 
     /// Reads a 64-bit register value (ARM64).
     pub fn reg_read(&self, index: usize) -> anyhow::Result<u64> {
-        unsafe {
-            Ok(ffi::reg_read(self.cur_handle, index as u64))
-        }
+        unsafe { Ok(ffi::reg_read(self.cur_handle, index as u64)) }
     }
 
     /// Reads the Link Register (X30 in ARM64).
     pub fn reg_read_lr(&self) -> anyhow::Result<u64> {
-        unsafe {
-            Ok(ffi::reg_read(self.cur_handle, 30))
-        }
+        unsafe { Ok(ffi::reg_read(self.cur_handle, 30)) }
     }
 
     /// Reads the NZCV (flags) register.
     pub fn reg_read_nzcv(&self) -> anyhow::Result<u64> {
-        unsafe {
-            Ok(ffi::reg_read_nzcv(self.cur_handle))
-        }
+        unsafe { Ok(ffi::reg_read_nzcv(self.cur_handle)) }
     }
 
     /// Reads the Stack Pointer.
     pub fn reg_read_sp(&self) -> anyhow::Result<u64> {
-        unsafe {
-            Ok(ffi::reg_read_sp(self.cur_handle))
-        }
+        unsafe { Ok(ffi::reg_read_sp(self.cur_handle)) }
     }
 
     /// Reads the Thread ID Register (EL0).
     pub fn reg_read_tpidr_el0(&self) -> anyhow::Result<u64> {
-        unsafe {
-            Ok(ffi::reg_read_tpidr_el0(self.cur_handle))
-        }
+        unsafe { Ok(ffi::reg_read_tpidr_el0(self.cur_handle)) }
     }
 
     /// Reads the Program Counter.
     pub fn reg_read_pc(&self) -> anyhow::Result<u64> {
-        unsafe {
-            Ok(ffi::reg_read_pc(self.cur_handle))
-        }
+        unsafe { Ok(ffi::reg_read_pc(self.cur_handle)) }
     }
 
     /// Writes the Program Counter.
@@ -466,7 +514,10 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// Writes a generic register value by index.
     pub fn reg_write_raw(&self, index: usize, value: u64) -> anyhow::Result<()> {
         unsafe {
-            debug!("[Dynarmic] Writing register: index={}, value=0x{:x}", index, value);
+            debug!(
+                "[Dynarmic] Writing register: index={}, value=0x{:x}",
+                index, value
+            );
             let ret = ffi::reg_write(self.cur_handle, index as u64, value);
             if ret != 0 {
                 return Err(anyhow!("Failed to write register: code={}", ret));
@@ -489,9 +540,7 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
 
     /// Reads from CP15 c13 0 3 (ARM32 Thread ID).
     pub fn reg_read_c13_c0_3(&self) -> anyhow::Result<u32> {
-        unsafe {
-            Ok(ffi::reg_read_c13_c0_3(self.cur_handle))
-        }
+        unsafe { Ok(ffi::reg_read_c13_c0_3(self.cur_handle)) }
     }
 
     /// Writes an ARM32 general-purpose register.
@@ -507,9 +556,7 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
 
     /// Reads an ARM32 general-purpose register.
     pub fn reg_read_r(&self, index: u32) -> anyhow::Result<u32> {
-        unsafe {
-            Ok(ffi::reg_read_r(self.cur_handle, index))
-        }
+        unsafe { Ok(ffi::reg_read_r(self.cur_handle, index)) }
     }
 
     /// Writes the CPSR register (ARM32).
@@ -525,9 +572,7 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
 
     /// Reads the CPSR register (ARM32).
     pub fn reg_read_cpsr(&self) -> anyhow::Result<u32> {
-        unsafe {
-            Ok(ffi::reg_read_cpsr(self.cur_handle))
-        }
+        unsafe { Ok(ffi::reg_read_cpsr(self.cur_handle)) }
     }
 
     /// Reads a null-terminated C string from guest memory.
@@ -548,8 +593,17 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// Reads guest memory into a mutable buffer.
     pub fn mem_read(&self, addr: u64, dest: &mut [u8]) -> anyhow::Result<()> {
         unsafe {
-            debug!("[Dynarmic] Reading memory: addr=0x{:x}, size=0x{:x}", addr, dest.len());
-            let ret = ffi::dynarmic_mem_read(self.cur_handle, addr, dest.as_mut_ptr() as *mut _, dest.len());
+            debug!(
+                "[Dynarmic] Reading memory: addr=0x{:x}, size=0x{:x}",
+                addr,
+                dest.len()
+            );
+            let ret = ffi::dynarmic_mem_read(
+                self.cur_handle,
+                addr,
+                dest.as_mut_ptr() as *mut _,
+                dest.len(),
+            );
             if ret != 0 {
                 return Err(anyhow!("Failed to read memory: code={}", ret));
             }
@@ -567,8 +621,17 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// Writes a buffer into guest memory.
     pub fn mem_write(&self, addr: u64, value: &[u8]) -> anyhow::Result<()> {
         unsafe {
-            debug!("[Dynarmic] Writing memory: addr=0x{:x}, size=0x{:x}", addr, value.len());
-            let ret = ffi::dynarmic_mem_write(self.cur_handle, addr, value.as_ptr() as *const _, value.len());
+            debug!(
+                "[Dynarmic] Writing memory: addr=0x{:x}, size=0x{:x}",
+                addr,
+                value.len()
+            );
+            let ret = ffi::dynarmic_mem_write(
+                self.cur_handle,
+                addr,
+                value.as_ptr() as *const _,
+                value.len(),
+            );
             if ret != 0 {
                 return Err(anyhow!("Failed to write memory: code={}", ret));
             }
@@ -581,7 +644,7 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// The callback receives the emulator instance, the SWI number, the end address, and the current PC.
     pub fn set_svc_callback<F: 'a>(&self, callback: F)
     where
-        F: FnMut(&Dynarmic<T>, u32, u64, u64),
+        F: FnMut(&Dynarmic<T>, u32, u64, u64) + Send + Sync,
     {
         debug!("[Dynarmic] Setting SVC callback");
         unsafe {
@@ -591,9 +654,13 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
             });
             let user_data = cb.as_mut() as *mut _ as *const c_void;
 
-            extern "C" fn svc_callback_wrapper<T: Clone, F>(swi: u32, user_data: *const c_void) 
-            where F: FnMut(&Dynarmic<T>, u32, u64, u64) {
-                if swi == 114514 { return; }
+            extern "C" fn svc_callback_wrapper<T: Clone + Send + Sync, F>(swi: u32, user_data: *const c_void)
+            where
+                F: FnMut(&Dynarmic<T>, u32, u64, u64) + Send + Sync,
+            {
+                if swi == 114514 {
+                    return;
+                }
                 unsafe {
                     let cb = &mut *(user_data as *mut DyHook<T, F>);
                     let dynarmic = &cb.dy;
@@ -603,7 +670,11 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
                 }
             }
 
-            ffi::dynarmic_set_svc_callback(self.cur_handle, svc_callback_wrapper::<T, F>, user_data);
+            ffi::dynarmic_set_svc_callback(
+                self.cur_handle,
+                svc_callback_wrapper::<T, F>,
+                user_data,
+            );
             (*self.metadata.get()).svc_callback = Some(cb);
         }
     }
@@ -613,7 +684,7 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     /// The callback should return `true` if the access was handled, `false` otherwise.
     pub fn set_unmapped_mem_callback<F: 'a>(&self, callback: F)
     where
-        F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool,
+        F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool + Send + Sync,
     {
         debug!("[Dynarmic] Setting unmapped memory callback");
         unsafe {
@@ -623,8 +694,15 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
             });
             let user_data = cb.as_mut() as *mut _ as *const c_void;
 
-            extern "C" fn unmapped_mem_callback_wrapper<T: Clone, F>(addr: u64, size: usize, value: u64, user_data: *const c_void) -> bool
-            where F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool {
+            extern "C" fn unmapped_mem_callback_wrapper<T: Clone + Send + Sync, F>(
+                addr: u64,
+                size: usize,
+                value: u64,
+                user_data: *const c_void,
+            ) -> bool
+            where
+                F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool + Send + Sync,
+            {
                 unsafe {
                     let cb = &mut *(user_data as *mut DyHook<T, F>);
                     let dynarmic = &cb.dy;
@@ -632,7 +710,11 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
                 }
             }
 
-            ffi::dynarmic_set_unmapped_mem_callback(self.cur_handle, unmapped_mem_callback_wrapper::<T, F>, user_data);
+            ffi::dynarmic_set_unmapped_mem_callback(
+                self.cur_handle,
+                unmapped_mem_callback_wrapper::<T, F>,
+                user_data,
+            );
             (*self.metadata.get()).unmapped_mem_callback = Some(cb);
         }
     }
@@ -641,13 +723,24 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
     pub fn destroy_callback(&self) {
         unsafe {
             extern "C" fn empty_svc_callback(_: u32, _: *const c_void) {}
-            extern "C" fn empty_unmapped_callback(_: u64, _: usize, _: u64, _: *const c_void) -> bool { false }
+            extern "C" fn empty_unmapped_callback(
+                _: u64,
+                _: usize,
+                _: u64,
+                _: *const c_void,
+            ) -> bool {
+                false
+            }
 
             ffi::dynarmic_set_svc_callback(self.cur_handle, empty_svc_callback, null_mut());
             let callback = (*self.metadata.get()).svc_callback.take();
             drop(callback);
 
-            ffi::dynarmic_set_unmapped_mem_callback(self.cur_handle, empty_unmapped_callback, null_mut());
+            ffi::dynarmic_set_unmapped_mem_callback(
+                self.cur_handle,
+                empty_unmapped_callback,
+                null_mut(),
+            );
             let callback = (*self.metadata.get()).unmapped_mem_callback.take();
             drop(callback);
         }

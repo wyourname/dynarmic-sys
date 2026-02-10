@@ -1,14 +1,14 @@
-use std::ffi::{c_char, c_void};
 use crate::Dynarmic;
+use std::ffi::{c_char, c_void};
 
 pub trait SFHook {}
 
-pub struct DyHook<'a, T: Clone, F> {
+pub struct DyHook<'a, T: Clone + Send + Sync, F> {
     pub callback: F,
     pub dy: Dynarmic<'a, T>,
 }
 
-impl<'a, T: Clone, F> SFHook for DyHook<'a, T, F> {}
+impl<'a, T: Clone + Send + Sync, F> SFHook for DyHook<'a, T, F> {}
 
 extern "C" {
     pub fn dynarmic_version() -> u32;
@@ -21,29 +21,68 @@ extern "C" {
 
     pub fn dynarmic_init_page_table() -> *mut *mut c_void;
 
-    pub fn dynarmic_new(process_id: u32, memory: *mut c_void, monitor: *mut c_void, page_table: *mut *mut c_void, jit_size: u64, unsafe_optimizations: bool) -> *mut c_void;
+    pub fn dynarmic_new(
+        process_id: u32,
+        memory: *mut c_void,
+        monitor: *mut c_void,
+        page_table: *mut *mut c_void,
+        jit_size: u64,
+        unsafe_optimizations: bool,
+    ) -> *mut c_void;
 
-    pub fn dynarmic_new_a32(process_id: u32, memory: *mut c_void, monitor: *mut c_void, page_table: *mut *mut c_void, jit_size: u64, unsafe_optimizations: bool, coprocessors: *const c_void) -> *mut c_void;
+    pub fn dynarmic_new_a32(
+        process_id: u32,
+        memory: *mut c_void,
+        monitor: *mut c_void,
+        page_table: *mut *mut c_void,
+        jit_size: u64,
+        unsafe_optimizations: bool,
+        coprocessors: *const c_void,
+    ) -> *mut c_void;
 
     pub fn dynarmic_get_cache_size(dynarmic: *mut c_void) -> u64;
 
     pub fn dynarmic_destroy(dynarmic: *mut c_void);
 
-    pub fn dynarmic_set_svc_callback(dynarmic: *mut c_void, cb: extern "C" fn(swi: u32, user_data: *const c_void), user_data: *const c_void);
+    pub fn dynarmic_set_svc_callback(
+        dynarmic: *mut c_void,
+        cb: extern "C" fn(swi: u32, user_data: *const c_void),
+        user_data: *const c_void,
+    );
 
-    pub fn dynarmic_set_unmapped_mem_callback(dynarmic: *mut c_void, cb: extern "C" fn(addr: u64, size: usize, value: u64, user_data: *const c_void) -> bool, user_data: *const c_void);
+    pub fn dynarmic_set_unmapped_mem_callback(
+        dynarmic: *mut c_void,
+        cb: extern "C" fn(addr: u64, size: usize, value: u64, user_data: *const c_void) -> bool,
+        user_data: *const c_void,
+    );
 
     pub fn dynarmic_munmap(dynarmic: *mut c_void, address: u64, size: u64) -> i32;
 
     pub fn dynarmic_mmap(dynarmic: *mut c_void, address: u64, size: u64, perms: i32) -> i32;
 
-    pub fn dynarmic_mem_map_ptr(dynarmic: *mut c_void, address: u64, size: u64, perms: i32, ptr: *mut c_void) -> i32;
+    pub fn dynarmic_mem_map_ptr(
+        dynarmic: *mut c_void,
+        address: u64,
+        size: u64,
+        perms: i32,
+        ptr: *mut c_void,
+    ) -> i32;
 
     pub fn dynarmic_mem_protect(dynarmic: *mut c_void, address: u64, size: u64, perms: i32) -> i32;
 
-    pub fn dynarmic_mem_write(dynarmic: *mut c_void, address: u64, data: *const c_char, size: usize) -> i32;
+    pub fn dynarmic_mem_write(
+        dynarmic: *mut c_void,
+        address: u64,
+        data: *const c_char,
+        size: usize,
+    ) -> i32;
 
-    pub fn dynarmic_mem_read(dynarmic: *mut c_void, address: u64, bytes: *mut c_char, size: usize) -> i32;
+    pub fn dynarmic_mem_read(
+        dynarmic: *mut c_void,
+        address: u64,
+        bytes: *mut c_char,
+        size: usize,
+    ) -> i32;
 
     pub fn reg_read_pc(dynarmic: *mut c_void) -> u64;
 
