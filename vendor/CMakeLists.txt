@@ -50,8 +50,10 @@ message(STATUS "Target architecture: ${ARCHITECTURE}")
 include("${DYNARMIC_SOURCE_DIR}/cmake/bundle_static.cmake")
 
 find_package(Boost 1.57 REQUIRED)
-find_package(fmt 9 CONFIG)
-find_package(mcl 0.1.12 EXACT CONFIG)
+if (NOT DYNARMIC_USE_BUNDLED_EXTERNALS)
+    find_package(fmt 9 CONFIG)
+    find_package(mcl 0.1.12 EXACT CONFIG)
+endif()
 find_package(tsl-robin-map CONFIG)
 
 if ("arm64" IN_LIST ARCHITECTURE OR DYNARMIC_TESTS)

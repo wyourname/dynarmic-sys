@@ -126,13 +126,21 @@ fn build_with_cmake() {
             .join("src")
             .display()
     );
+    println!(
+        "cargo:rustc-link-search=native={}",
+        dst.join("build")
+            .join("dynarmic")
+            .join("externals")
+            .join("fmt")
+            .display()
+    );
 
     // Lazymio(@wtdcode): Dynamic link may break. See: https://github.com/rust-lang/cargo/issues/5077
     println!("cargo:rustc-link-lib=static=dynarmic");
     if !compiler.is_like_msvc() {
         println!("cargo:rustc-link-lib=pthread");
         println!("cargo:rustc-link-lib=m");
-        println!("cargo:rustc-link-lib=fmt");
+        println!("cargo:rustc-link-lib=static=fmt");
         println!("cargo:rustc-link-lib=static=mcl");
 
         // if is x86_64
@@ -156,7 +164,7 @@ fn main() {
             println!("cargo:rustc-link-arg=-Wl,-allow-multiple-definition");
             println!("cargo:rustc-link-lib=static=dynarmic");
             println!("cargo:rustc-link-lib=pthread");
-            println!("cargo:rustc-link-lib=fmt");
+            println!("cargo:rustc-link-lib=static=fmt");
             println!("cargo:rustc-link-lib=m");
 
             if cfg!(target_arch = "x86_64") {
