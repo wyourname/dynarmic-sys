@@ -1,9 +1,12 @@
 [package]
 name = "dynarmic-sys"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
-authors = ["wyourname <https://github.com/wyourname/dynarmic-sys>"]
-description = "A Rust wrapper for the Dynarmic ARM dynamic recompiler."
+authors = [
+    "wyourname <https://github.com/wyourname/dynarmic-sys>",
+    "Mythrax <https://github.com/Mythrax-ZS>",
+]
+description = "A Rust wrapper for the Dynarmic ARM dynamic recompiler with Windows MSVC build support."
 license = "0BSD"
 repository = "https://github.com/wyourname/dynarmic-sys"
 readme = "README.md"

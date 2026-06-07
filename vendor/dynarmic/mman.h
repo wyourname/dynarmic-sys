@@ -36,6 +36,7 @@ extern "C" {
 #define MAP_FIXED       0x10
 #define MAP_ANONYMOUS   0x20
 #define MAP_ANON        MAP_ANONYMOUS
+#define MAP_NORESERVE   0x4000
 
 #define MAP_FAILED      ((void *)-1)
 
@@ -44,12 +45,19 @@ extern "C" {
 #define MS_SYNC         2
 #define MS_INVALIDATE   4
 
+#define MADV_NORMAL     0
+#define MADV_RANDOM     1
+#define MADV_SEQUENTIAL 2
+#define MADV_WILLNEED   3
+#define MADV_DONTNEED   4
+
 void*   mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
 int     munmap(void *addr, size_t len);
 int     mprotect(void *addr, size_t len, int prot);
 int     msync(void *addr, size_t len, int flags);
 int     mlock(const void *addr, size_t len);
 int     munlock(const void *addr, size_t len);
+int     madvise(void *addr, size_t len, int advice);
 
 #ifdef __cplusplus
 };

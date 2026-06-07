@@ -6,11 +6,18 @@
 
 Rust bindings for the [Dynarmic](https://github.com/lioncash/dynarmic) ARM dynamic recompiler.
 
+This version includes Windows MSVC build fixes and runtime compatibility fixes
+merged from [Mythrax-ZS/dynarmic-sys](https://github.com/Mythrax-ZS/dynarmic-sys):
+MSVC link directives for bundled externals, a Windows `mman` shim update,
+`TPIDRRO_EL0` read/write support, `emu_start` overflow handling, and wider
+AArch64 page-table coverage.
+
 ### Credits
 
 - **Original Project**: [Dynarmic](https://github.com/lioncash/dynarmic) by [lioncash](https://github.com/lioncash)
 - **Initial Implementation Reference**: [rnidbg](https://github.com/fuqiuluo/rnidbg) by [fuqiuluo](https://github.com/fuqiuluo)
 - **Maintainer**: [wyourname](https://github.com/wyourname/dynarmic-sys)
+- **Windows Compatibility Fixes**: [Mythrax-ZS](https://github.com/Mythrax-ZS/dynarmic-sys)
 
 ### Features
 
@@ -25,7 +32,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-dynarmic-sys = { version = "0.1.0" }
+dynarmic-sys = { version = "0.1.3" }
 ```
 
 ---
@@ -34,11 +41,17 @@ dynarmic-sys = { version = "0.1.0" }
 
 [Dynarmic](https://github.com/lioncash/dynarmic) ARM 动态重编译器的 Rust 绑定。
 
+此版本合并了来自 [Mythrax-ZS/dynarmic-sys](https://github.com/Mythrax-ZS/dynarmic-sys)
+的 Windows MSVC 构建和运行兼容性修复：MSVC bundled externals 链接指令、
+Windows `mman` shim 更新、`TPIDRRO_EL0` 读写支持、`emu_start` 溢出处理以及
+更大的 AArch64 页表覆盖范围。
+
 ### 致谢与出处
 
 - **原始项目**: [Dynarmic](https://github.com/lioncash/dynarmic) - 作者 [lioncash](https://github.com/lioncash)
 - **初始实现参考**: [rnidbg](https://github.com/fuqiuluo/rnidbg) - 作者 [fuqiuluo](https://github.com/fuqiuluo)
 - **维护者**: [wyourname](https://github.com/wyourname/dynarmic-sys)
+- **Windows 兼容性修复**: [Mythrax-ZS](https://github.com/Mythrax-ZS/dynarmic-sys)
 
 ### 特性
 
@@ -53,7 +66,7 @@ dynarmic-sys = { version = "0.1.0" }
 
 ```toml
 [dependencies]
-dynarmic-sys = { version = "0.1.0" }
+dynarmic-sys = { version = "0.1.3" }
 ```
 
 ---

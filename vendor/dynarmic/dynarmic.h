@@ -19,7 +19,7 @@ using usize = std::size_t;
 using addr = u64;
 
 
-#define PAGE_TABLE_ADDRESS_SPACE_BITS 36
+#define PAGE_TABLE_ADDRESS_SPACE_BITS 40
 #define DYN_PAGE_BITS 12 // 4k
 #define DYN_PAGE_SIZE (1ULL << DYN_PAGE_BITS)
 #define DYN_PAGE_MASK (DYN_PAGE_SIZE-1)
@@ -136,6 +136,10 @@ FQL int reg_write_nzcv(dynarmic* dynarmic, u64 value);
 FQL int reg_write_tpidr_el0(dynarmic* dynarmic, u64 value);
 
 FQL u64 reg_read_tpidr_el0(dynarmic* dynarmic);
+
+FQL int reg_write_tpidrr0_el0(dynarmic* dynarmic, u64 value);
+
+FQL u64 reg_read_tpidrr0_el0(dynarmic* dynarmic);
 
 FQL int reg_write_vector(dynarmic* dynarmic, u64 index, u64* array);
 

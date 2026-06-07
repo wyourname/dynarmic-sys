@@ -59,7 +59,11 @@ public:
             : memory{memory} {}
 
     bool IsReadOnlyMemory(u64 vaddr) override { return false; }
-    std::optional<std::uint32_t> MemoryReadCode(u64 vaddr) override { return MemoryRead32(vaddr); }
+    std::optional<std::uint32_t> MemoryReadCode(u64 vaddr) override {
+        u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        if (dest) return *dest;
+        return std::nullopt;
+    }
 
     u8 MemoryRead8(u64 vaddr) override {
         u8 *dest = (u8 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
@@ -149,6 +153,12 @@ class DynarmicCallbacks32 final : public Dynarmic::A32::UserCallbacks {
 public:
     explicit DynarmicCallbacks32(khash_t(memory) *memory)
             : memory{memory} {}
+
+    std::optional<std::uint32_t> MemoryReadCode(u32 vaddr) override {
+        u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        if (dest) return *dest;
+        return std::nullopt;
+    }
 
     u8 MemoryRead8(u32 vaddr) override {
         u8 *dest = (u8 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
@@ -281,7 +291,11 @@ FQL Dynarmic::ExclusiveMonitor *dynarmic_init_monitor(u32 processor_count) {
 
 FQL void** dynarmic_init_page_table() {
     size_t size = (1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS)) * sizeof(void *);
+#ifdef MAP_NORESERVE
     void **page_table = (void **) mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
+#else
+    void **page_table = (void **) mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+#endif
     return (page_table == MAP_FAILED) ? nullptr : page_table;
 }
 
@@ -305,8 +319,8 @@ FQL dynarmic* dynarmic_new(u32 process_id, khash_t(memory) *memory, Dynarmic::Ex
 
     if(unsafe_optimizations) {
         config.unsafe_optimizations = true;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
     }
 
     backend->num_page_table_entries = 1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS);
@@ -326,6 +340,8 @@ FQL dynarmic* dynarmic_new(u32 process_id, khash_t(memory) *memory, Dynarmic::Ex
     config.fastmem_pointer = std::nullopt;
     config.recompile_on_exclusive_fastmem_failure = true;
     config.enable_cycle_counting = false;
+    config.optimizations &= ~(Dynarmic::OptimizationFlag::FastDispatch |
+                               Dynarmic::OptimizationFlag::ReturnStackBuffer);
 
     backend->cb64 = callbacks;
     backend->jit64 = new Dynarmic::A64::Jit(config);
@@ -354,6 +370,9 @@ FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic
         config.unsafe_optimizations = true;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
     }
 
     backend->num_page_table_entries = 1ULL << (32 - DYN_PAGE_BITS);
@@ -551,6 +570,7 @@ FQL int reg_write_nzcv(dynarmic* dynarmic, u64 value) {
 FQL int reg_write_tpidr_el0(dynarmic* dynarmic, u64 value) { if (dynarmic->jit64) dynarmic->jit64->SetTPIDR_EL0(value); return 0; }
 FQL u64 reg_read_tpidr_el0(dynarmic* dynarmic) { return dynarmic->jit64 ? dynarmic->jit64->GetTPIDR_EL0() : 0; }
 FQL int reg_write_tpidrr0_el0(dynarmic* dynarmic, u64 value) { if (dynarmic->jit64) dynarmic->jit64->SetTPIDRRO_EL0(value); return 0; }
+FQL u64 reg_read_tpidrr0_el0(dynarmic* dynarmic) { return dynarmic->tpidrro_el0_val; }
 
 FQL int reg_write(dynarmic* d, u64 index, u64 value) { 
     if (d->jit64) {
@@ -612,7 +632,7 @@ FQL int dynarmic_context_restore(dynarmic* d, t_context64 context) {
     d->jit64->SetRegisters(context->registers); d->jit64->SetSP(context->sp); d->jit64->SetPC(context->pc);
     d->jit64->SetPstate(context->pstate); d->jit64->SetVectors(context->vectors);
     d->jit64->SetFpcr(context->fpcr); d->jit64->SetFpsr(context->fpsr);
-    d->jit64->SetTPIDR_EL0(context->tpidr_el0); d->jit64->SetTPIDRRO_EL0(context->tpidr_el0);
+    d->jit64->SetTPIDR_EL0(context->tpidr_el0); d->jit64->SetTPIDRRO_EL0(context->tpidrro_el0);
     return 0;
 }
 FQL int dynarmic_context_save(dynarmic* d, t_context64 context) {

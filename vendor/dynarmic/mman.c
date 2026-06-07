@@ -178,3 +178,11 @@ int munlock(const void *addr, size_t len)
 
     return -1;
 }
+
+int madvise(void *addr, size_t len, int advice)
+{
+    (void)addr;
+    (void)len;
+    (void)advice;
+    return 0;
+}

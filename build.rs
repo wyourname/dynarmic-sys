@@ -137,17 +137,35 @@ fn build_with_cmake() {
 
     // Lazymio(@wtdcode): Dynamic link may break. See: https://github.com/rust-lang/cargo/issues/5077
     println!("cargo:rustc-link-lib=static=dynarmic");
-    if !compiler.is_like_msvc() {
+    if compiler.is_like_msvc() {
+        println!("cargo:rustc-link-lib=static=fmt");
+        println!("cargo:rustc-link-lib=static=mcl");
+        if cfg!(target_arch = "x86_64") {
+            println!("cargo:rustc-link-lib=static=Zycore");
+            println!("cargo:rustc-link-lib=static=Zydis");
+        }
+    } else {
         println!("cargo:rustc-link-lib=pthread");
         println!("cargo:rustc-link-lib=m");
         println!("cargo:rustc-link-lib=static=fmt");
         println!("cargo:rustc-link-lib=static=mcl");
 
-        // if is x86_64
         if cfg!(target_arch = "x86_64") {
             println!("cargo:rustc-link-lib=static=Zycore");
             println!("cargo:rustc-link-lib=static=Zydis");
         }
+
+        println!("cargo:rustc-link-lib={}", cxx_runtime_lib());
+    }
+}
+
+fn cxx_runtime_lib() -> &'static str {
+    match env::var("CARGO_CFG_TARGET_OS").unwrap_or_default().as_str() {
+        "macos" | "ios" | "tvos" | "watchos" | "freebsd" | "dragonfly" | "openbsd" | "netbsd" => {
+            "c++"
+        }
+        "android" => "c++_shared",
+        _ => "stdc++",
     }
 }
 
@@ -170,6 +188,8 @@ fn main() {
             if cfg!(target_arch = "x86_64") {
                 println!("cargo:rustc-link-lib=Zydis");
             }
+
+            println!("cargo:rustc-link-lib={}", cxx_runtime_lib());
         }
         Err(_) => {
             println!("pkg-config could not find dynarmic, building from source");

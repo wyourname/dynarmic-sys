@@ -230,7 +230,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         unsafe {
             debug!("[Dynarmic] Starting emulator: pc=0x{:x}", pc);
 
-            (*self.metadata.get()).until = until + 4;
+            (*self.metadata.get()).until = until.saturating_add(4);
 
             let ret = ffi::dynarmic_emu_start(self.cur_handle, pc);
             if ret != 0 {
@@ -494,9 +494,17 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
     /// Writes the Thread ID Read-Only Register (EL0).
     pub fn reg_write_tpidrr0_el0(&self, value: u64) -> anyhow::Result<()> {
         unsafe {
-            ffi::reg_write_tpidr_el0(self.cur_handle, value);
+            let ret = ffi::reg_write_tpidrr0_el0(self.cur_handle, value);
+            if ret != 0 {
+                return Err(anyhow!("Failed to write TPIDRRO_EL0: code={}", ret));
+            }
         }
         Ok(())
+    }
+
+    /// Reads the Thread ID Read-Only Register (EL0).
+    pub fn reg_read_tpidrr0_el0(&self) -> anyhow::Result<u64> {
+        unsafe { Ok(ffi::reg_read_tpidrr0_el0(self.cur_handle)) }
     }
 
     /// Writes the NZCV (flags) register.
@@ -654,8 +662,10 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             });
             let user_data = cb.as_mut() as *mut _ as *const c_void;
 
-            extern "C" fn svc_callback_wrapper<T: Clone + Send + Sync, F>(swi: u32, user_data: *const c_void)
-            where
+            extern "C" fn svc_callback_wrapper<T: Clone + Send + Sync, F>(
+                swi: u32,
+                user_data: *const c_void,
+            ) where
                 F: FnMut(&Dynarmic<T>, u32, u64, u64) + Send + Sync,
             {
                 if swi == 114514 {
